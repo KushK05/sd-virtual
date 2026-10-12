@@ -6,7 +6,7 @@ Build a 20-30 minute browser lab where learners configure a real Layer 7 reverse
 
 ## Implementation status
 
-The initial vertical slice now includes the Vite/React workbench, Fastify session/config/fault/reset/run APIs, three loopback HTTP upstreams, a real HTTP proxy endpoint, deterministic weighted catalog requests, actual measured run results, the canary weight editor, latency/status traces, report download, project design/UX context, health-aware ejection and recovery thresholds, idempotent proxy retries, per-session token-bucket admission limits, route priority/specificity matching, progress/completion SSE events, server-side report checks and SLO scoring, Docker Compose, Render, and Vercel configuration. Remaining plan milestones include richer lesson-specific controls and content, resilient cold-start/session recovery, and deployed smoke checks.
+The initial vertical slice now includes the Vite/React workbench, Fastify session/config/fault/reset/run APIs, three loopback HTTP upstreams, a real HTTP proxy endpoint, deterministic weighted catalog requests, a header-specific `X-Beta-User: true` route, actual measured run results, the canary weight editor, latency/status traces, report download, project design/UX context, health-aware ejection and recovery thresholds, idempotent proxy retries with non-idempotent method protection, per-session token-bucket admission limits, route priority/specificity matching, progress/completion SSE events, server-side report checks and SLO scoring, Docker Compose, Render, and Vercel configuration. Remaining plan milestones include richer lesson-specific controls and content, resilient cold-start/session recovery, and deployed smoke checks.
 
 ## Learning outcomes
 
