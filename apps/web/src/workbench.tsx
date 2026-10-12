@@ -106,9 +106,11 @@ export default function App() {
     try { const result = await request(`/api/sessions/${session}/reset`, { method: 'POST' }); setRoutes(result.config); setRun(null); setReport(null); setFaulted(false); setNotice('Lesson reset'); setError(''); }
     catch (e) { setError(e instanceof Error ? e.message : 'Could not reset the lesson'); }
   }
-  function exportReport() {
-    const report = `<!doctype html><meta charset="utf-8"><title>Gateway lab report</title><style>body{font:16px system-ui;max-width:760px;margin:4rem auto;color:#18231f}table{border-collapse:collapse}td,th{padding:10px;border:1px solid #ccd4ce;text-align:left}</style><h1>Gateway lab report</h1><p>Completed ${new Date().toLocaleString()}</p><h2>Canary release</h2><p>Configuration: ${catalog?.pool.map(item => `${names[item.upstreamId]} ${item.weight}%`).join(', ')}</p>${run ? `<h2>Observed run</h2><p>${run.completed} requests · ${(run.successRate * 100).toFixed(1)}% success · p95 ${run.p95} ms</p>` : '<p>No traffic run recorded.</p>'}`;
-    const anchor = document.createElement('a'); anchor.href = URL.createObjectURL(new Blob([report], { type: 'text/html' })); anchor.download = 'gateway-lab-report.html'; anchor.click(); URL.revokeObjectURL(anchor.href);
+  async function exportReport() {
+    const evaluated = report ?? (session ? await request(`/api/sessions/${session}/report`).catch(() => null) : null);
+    const checks = evaluated?.checks?.map((check: LabReport['checks'][number]) => `<li>${check.passed ? 'PASS' : 'CHECK'} - ${check.label}: ${check.actual}</li>`).join('') ?? '';
+    const reportHtml = `<!doctype html><meta charset="utf-8"><title>Gateway lab report</title><style>body{font:16px system-ui;max-width:760px;margin:4rem auto;color:#18231f}li{margin:10px 0}.score{font-size:36px;color:#176b55}</style><h1>Gateway lab report</h1><p>Completed ${new Date().toLocaleString()}</p><h2>Canary release</h2><p>Configuration: ${catalog?.pool.map(item => `${names[item.upstreamId]} ${item.weight}%`).join(', ')}</p>${run ? `<h2>Observed run</h2><p>${run.completed} requests · ${(run.successRate * 100).toFixed(1)}% success · p95 ${run.p95} ms</p>` : '<p>No traffic run recorded.</p>'}${evaluated ? `<h2>Challenge score</h2><div class="score">${evaluated.score}/100</div><ul>${checks}</ul>` : ''}`;
+    const anchor = document.createElement('a'); anchor.href = URL.createObjectURL(new Blob([reportHtml], { type: 'text/html' })); anchor.download = 'gateway-lab-report.html'; anchor.click(); URL.revokeObjectURL(anchor.href);
   }
 
   return <main className="shell">
