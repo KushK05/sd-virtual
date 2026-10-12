@@ -10,6 +10,7 @@ type Sample = { upstreamId: TargetId; status: number; durationMs: number };
 type RunResult = { id: number; requested: number; completed: number; countByUpstream: Record<string, number>; successRate: number; p50: number; p95: number; p99: number; health: Record<TargetId, HealthState>; traces: Sample[] };
 type Session = { id: string; expires: number; config: Route[]; faults: Partial<Record<TargetId, { delayMs: number; errorRate: number; down: boolean }>>; health: Record<TargetId, HealthState>; rateLimit: { requestsPerSecond: number; burst: number; recent: number[] }; runs: number; lastRun?: RunResult };
 const baseConfig: Route[] = [
+  { id: 'catalog-beta', priority: 20, match: { pathPrefix: '/api/catalog', headers: { 'x-beta-user': 'true' } }, pool: [{ upstreamId: 'catalog-v2', weight: 100 }], timeoutMs: 1000, retries: 0 },
   { id: 'catalog', priority: 10, match: { pathPrefix: '/api/catalog' }, pool: [{ upstreamId: 'catalog-v1', weight: 80 }, { upstreamId: 'catalog-v2', weight: 20 }], timeoutMs: 1000, retries: 0 },
   { id: 'checkout', priority: 10, match: { pathPrefix: '/api/checkout' }, pool: [{ upstreamId: 'checkout', weight: 100 }], timeoutMs: 1000, retries: 0 }
 ];
@@ -86,7 +87,7 @@ app.put<{ Params: { id: string }; Body: Route[] | { routes: Route[]; rateLimit?:
     if (!route.id || !route.match?.pathPrefix?.startsWith('/') || !Array.isArray(route.pool) || !route.pool.length) return reply.code(400).send({ error: `Route ${index + 1} needs an id, path prefix, and upstream pool.` });
     if (!Number.isInteger(route.timeoutMs) || route.timeoutMs < 50 || route.timeoutMs > 10_000 || !Number.isInteger(route.retries) || route.retries < 0 || route.retries > 2) return reply.code(400).send({ error: `Route ${route.id} timeout must be 50-10000 ms and retries 0-2.` });
     if (route.pool.some(target => !(target.upstreamId in targets) || !Number.isInteger(target.weight) || target.weight < 1 || target.weight > 100) || route.pool.reduce((sum, target) => sum + target.weight, 0) !== 100) return reply.code(400).send({ error: `Route ${route.id} must use known upstreams with positive integer weights totaling 100%.` });
-    if (route.match.methods?.some(method => method.toUpperCase() === 'POST') && route.retries > 0) return reply.code(400).send({ error: 'POST requests cannot be retried.' });
+    if ((!route.match.methods || route.match.methods.some(method => method.toUpperCase() === 'POST')) && route.retries > 0) return reply.code(400).send({ error: 'Routes that may receive POST requests cannot be retried.' });
   }
   session.config = structuredClone(routes); if (rateLimit) { session.rateLimit.requestsPerSecond = rateLimit.requestsPerSecond; session.rateLimit.burst = rateLimit.burst; } return { saved: true, config: session.config, rateLimit: session.rateLimit };
 });
@@ -133,7 +134,7 @@ app.get<{ Params: { id: string } }>('/api/sessions/:id/report', async (request, 
     { id: 'success-rate', label: 'At least 99% of admitted requests succeed', passed: run.successRate >= .99, actual: `${(run.successRate * 100).toFixed(1)}%` },
     { id: 'tail-latency', label: 'p95 latency stays below 300 ms', passed: run.p95 < 300, actual: `${run.p95} ms` },
     { id: 'health-ejection', label: 'Unhealthy services are tracked by the gateway', passed: Object.values(run.health).some(state => state.status === 'unhealthy') || !Object.values(session.faults).some(fault => fault?.down || (fault?.errorRate ?? 0) > 0), actual: Object.entries(run.health).filter(([, state]) => state.status === 'unhealthy').map(([id]) => id).join(', ') || 'healthy' },
-    { id: 'checkout-retries', label: 'Checkout POST routes do not retry', passed: !session.config.some(route => route.match.pathPrefix.startsWith('/api/checkout') && route.retries > 0 && route.match.methods?.includes('POST')), actual: 'gateway policy' }
+    { id: 'checkout-retries', label: 'Checkout POST routes do not retry', passed: !session.config.some(route => route.match.pathPrefix.startsWith('/api/checkout') && route.retries > 0 && (!route.match.methods || route.match.methods.includes('POST'))), actual: 'gateway policy' }
   ] : [];
   return { sessionId: session.id, generatedAt: new Date().toISOString(), config: session.config, run, checks, score: checks.length ? Math.round(checks.filter(check => check.passed).length / checks.length * 100) : 0 };
 });
@@ -152,7 +153,8 @@ app.all<{ Params: { id: string; '*': string } }>('/proxy/:id/*', async (request,
   if (!route) return reply.code(404).send({ error: 'No route matches this request.' });
   if (!takeRateLimit(session)) return reply.code(429).send({ error: 'Gateway rate limit exceeded.', retryAfterMs: 1000 });
   const requestId = String(request.headers['x-request-id'] ?? randomUUID());
-  const attempts = route.retries + 1;
+  const retryableMethod = ['GET', 'HEAD', 'OPTIONS', 'PUT', 'DELETE'].includes(request.method);
+  const attempts = retryableMethod ? route.retries + 1 : 1;
   let lastTarget: TargetId = selectTarget(route, requestId, session);
   for (let attempt = 0; attempt < attempts; attempt++) {
     const targetId = selectTarget(route, `${requestId}:${attempt}`, session); lastTarget = targetId;
