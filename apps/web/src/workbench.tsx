@@ -27,6 +27,7 @@ export default function App() {
   const [requestCount, setRequestCount] = useState(200);
   const [run, setRun] = useState<Run | null>(null);
   const [busy, setBusy] = useState(false);
+  const [starting, setStarting] = useState(true);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [selectedRule, setSelectedRule] = useState('catalog');
@@ -44,8 +45,22 @@ export default function App() {
     return data;
   }
   async function createSession() {
-    try { const created = await request('/api/sessions', { method: 'POST' }); setSession(created.id); setRoutes(created.config); setError(''); }
-    catch { setError('The lab server is waking up. Check that the API is running, then start a new session.'); }
+    setStarting(true); setError('');
+    try {
+      let delay = 1000;
+      for (let attempt = 0; attempt < 8; attempt++) {
+        try {
+          const health = await fetch(`${api}/healthz`, { signal: AbortSignal.timeout(4000) });
+          if (health.ok) break;
+        } catch { /* Render may still be waking up. */ }
+        if (attempt === 7) throw new Error('startup-timeout');
+        setNotice(attempt < 3 ? 'Starting your virtual lab' : 'The lab server is still waking up');
+        await new Promise(resolve => setTimeout(resolve, delay));
+        delay = Math.min(delay * 2, 15_000);
+      }
+      const created = await request('/api/sessions', { method: 'POST' }); setSession(created.id); setRoutes(created.config); setNotice('Lab connected');
+    } catch { setError('The lab server is waking up. It can take up to 90 seconds after a quiet period.'); }
+    finally { setStarting(false); }
   }
   useEffect(() => { void createSession(); }, []);
   useEffect(() => {
@@ -97,7 +112,7 @@ export default function App() {
   }
 
   return <main className="shell">
-    <header className="topbar"><a className="brand" href="#top" aria-label="Breakwater Lab home"><span className="brand-mark"><Activity size={18} /></span><span>breakwater<span className="brand-light"> lab</span></span></a><div className="crumb"><span>Virtual labs</span><ArrowRight size={14} /><strong>Dynamic API gateway</strong></div><div className="top-right"><span className="session-pill"><span className={streamReady ? 'live-dot' : 'live-dot quiet'} />{streamReady ? 'Lab connected' : 'Connecting'}</span><button className="icon-button" aria-label="Help"><CircleHelp size={18} /></button><div className="avatar">S</div></div></header>
+    <header className="topbar"><a className="brand" href="#top" aria-label="Breakwater Lab home"><span className="brand-mark"><Activity size={18} /></span><span>breakwater<span className="brand-light"> lab</span></span></a><div className="crumb"><span>Virtual labs</span><ArrowRight size={14} /><strong>Dynamic API gateway</strong></div><div className="top-right"><span className="session-pill"><span className={streamReady ? 'live-dot' : 'live-dot quiet'} />{starting ? 'Starting lab' : streamReady ? 'Lab connected' : 'Connecting'}</span><button className="icon-button" aria-label="Help"><CircleHelp size={18} /></button><div className="avatar">S</div></div></header>
     <div className="layout">
       <aside className="lesson-rail"><div className="course-label">NETWORK ENGINEERING <span>LAB 04</span></div><div className="rail-title">Dynamic API<br />gateway</div><p className="rail-description">Shape traffic. Watch the system respond.</p><div className="progress-line"><span style={{ width: `${22 + activeLesson * 18}%` }} /></div><div className="progress-copy"><span>YOUR PROGRESS</span><strong>{activeLesson + (run ? 1 : 0)} of 4</strong></div>
         <nav aria-label="Lab activities" className="lesson-list">{lessons.map((lesson, i) => { const Icon = lesson.icon; return <button key={lesson.title} className={`lesson-item ${activeLesson === i ? 'selected' : ''} ${completed[i] ? 'done' : ''}`} onClick={() => setActiveLesson(i)}><span className="lesson-icon">{completed[i] ? <Check size={16} /> : <Icon size={16} />}</span><span className="lesson-text"><strong>{lesson.title}</strong><small>{lesson.subtitle}</small></span>{activeLesson === i && <span className="lesson-arrow"><ArrowDownRight size={15} /></span>}</button>; })}</nav>
