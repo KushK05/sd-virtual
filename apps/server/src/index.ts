@@ -22,6 +22,8 @@ const app = Fastify({ logger: true, bodyLimit: 64 * 1024 });
 const sessions = new Map<string, Session>();
 const eventClients = new Map<string, Set<ServerResponse>>();
 const now = () => Date.now();
+const sessionTtlMs = Math.max(5, Number(process.env.SESSION_TTL_MINUTES ?? 60)) * 60_000;
+const maxRunMs = Math.max(1, Number(process.env.MAX_RUN_SECONDS ?? 30)) * 1000;
 const getSession = (id: string) => { const session = sessions.get(id); if (!session || session.expires < now()) { sessions.delete(id); return undefined; } return session; };
 function selectTarget(route: Route, requestId: string, session?: Session): TargetId {
   const pool = route.pool.filter(target => !session || session.health[target.upstreamId].status === 'healthy');
@@ -66,7 +68,7 @@ await app.register(cors, { origin: (origin, callback) => callback(null, !origin 
 app.get('/healthz', async () => ({ status: 'ok', service: 'l7-lab' }));
 app.post('/api/sessions', async (_request, reply) => {
   const health = Object.fromEntries(Object.keys(targets).map(id => [id, { status: 'healthy', failures: 0, successes: 0, lastChange: now() }])) as Record<TargetId, HealthState>;
-  const session: Session = { id: randomUUID(), expires: now() + 60 * 60_000, config: structuredClone(baseConfig), faults: {}, health, rateLimit: { requestsPerSecond: 100, burst: 20, recent: [] }, runs: 0 };
+  const session: Session = { id: randomUUID(), expires: now() + sessionTtlMs, config: structuredClone(baseConfig), faults: {}, health, rateLimit: { requestsPerSecond: 100, burst: 20, recent: [] }, runs: 0 };
   sessions.set(session.id, session);
   return reply.code(201).send({ id: session.id, expiresAt: session.expires, config: session.config, faults: session.faults, health: session.health, rateLimit: session.rateLimit, services: Object.keys(targets) });
 });
@@ -100,7 +102,11 @@ app.post<{ Params: { id: string }; Body: { count?: number } }>('/api/sessions/:i
   const session = getSession(request.params.id); if (!session) return reply.code(404).send({ error: 'Session expired.' });
   const count = Math.min(200, Math.max(1, Math.floor(request.body?.count ?? 40)));
   const samples: Sample[] = [];
+  const runStarted = now();
+  const pacingMs = Math.max(1, Math.ceil(1000 / session.rateLimit.requestsPerSecond));
   for (let i = 0; i < count; i++) {
+    if (now() - runStarted >= maxRunMs) break;
+    if (i > 0) await new Promise(resolve => setTimeout(resolve, pacingMs));
     const requestId = `${session.id}:${session.runs}:${i}`;
     const expectedRoute = chooseRoute(session.config, { url: '/api/catalog/items', method: 'GET', headers: { 'x-request-id': requestId } } as unknown as IncomingMessage);
     if (!expectedRoute) continue;
