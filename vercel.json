@@ -1,0 +1,6 @@
+{
+  "buildCommand": "npm run build --workspace=@sd-virtual/web",
+  "outputDirectory": "apps/web/dist",
+  "installCommand": "npm ci",
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+}

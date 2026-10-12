@@ -1,0 +1,46 @@
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    environment:
+      PORT: 3100
+      CORS_ORIGIN: http://localhost:5173
+      UPSTREAM_CATALOG_V1: http://catalog-v1:9101
+      UPSTREAM_CATALOG_V2: http://catalog-v2:9102
+      UPSTREAM_CHECKOUT: http://checkout:9103
+    ports:
+      - "3100:3100"
+    depends_on:
+      - catalog-v1
+      - catalog-v2
+      - checkout
+  catalog-v1:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    environment:
+      PORT: 9101
+    command: ["node", "-e", "require('http').createServer((req,res)=>{res.setHeader('content-type','application/json');res.end(JSON.stringify({service:'catalog-v1',path:req.url}))}).listen(9101,'0.0.0.0')"]
+  catalog-v2:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    environment:
+      PORT: 9102
+    command: ["node", "-e", "require('http').createServer((req,res)=>{res.setHeader('content-type','application/json');res.end(JSON.stringify({service:'catalog-v2',path:req.url}))}).listen(9102,'0.0.0.0')"]
+  checkout:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    environment:
+      PORT: 9103
+    command: ["node", "-e", "require('http').createServer((req,res)=>{res.setHeader('content-type','application/json');res.end(JSON.stringify({service:'checkout',path:req.url}))}).listen(9103,'0.0.0.0')"]
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "5173:80"
+    depends_on:
+      - gateway

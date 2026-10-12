@@ -1,0 +1,12 @@
+{
+  "name": "sd-virtual-l7-lab",
+  "private": true,
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c green,blue \"npm run dev --workspace=@sd-virtual/server\" \"npm run dev --workspace=@sd-virtual/web\"",
+    "build": "npm run build --workspace=@sd-virtual/server && npm run build --workspace=@sd-virtual/web"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: breakwater-lab-api
+    runtime: node
+    rootDir: .
+    buildCommand: npm ci && npm run build --workspace=@sd-virtual/server
+    startCommand: node apps/server/dist/index.js
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SESSION_TTL_MINUTES
+        value: "60"
+      - key: MAX_RUN_SECONDS
+        value: "30"
+      - key: MAX_RUN_RPS
+        value: "100"
+      - key: CORS_ORIGIN
+        sync: false
