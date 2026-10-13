@@ -6,4 +6,5 @@
 - A run has explicit pending, running, complete, and failed states. Disable duplicate run submission, preserve control dimensions, show progress, and summarize the completed run inline.
 - The real proxy path is the source of response and trace data. UI estimates must not be presented as measured requests.
 - Errors state the failed operation and a recovery action. A lost/expired session offers a direct restart path without a full page refresh.
+- An event stream disconnect triggers one session validity check; an expired session exposes a restart action without looping validity requests.
 - Keyboard access, visible focus, reduced motion, text labels for health states, and responsive reading of results are required.
