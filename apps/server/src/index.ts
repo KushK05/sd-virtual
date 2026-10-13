@@ -56,6 +56,7 @@ function chooseRoute(routes: Route[], req: IncomingMessage) {
 }
 function sendJson(res: ServerResponse, code: number, body: unknown) { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); }
 function emit(sessionId: string, event: string, data: unknown) { for (const client of eventClients.get(sessionId) ?? []) { if (!client.writableEnded) client.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); } }
+function allowedOrigin(origin: string | undefined) { return !origin || origin === process.env.CORS_ORIGIN || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin); }
 const services: Array<{ port: number; name: TargetId; version: string }> = [
   { port: 9101, name: 'catalog-v1', version: 'catalog v1' }, { port: 9102, name: 'catalog-v2', version: 'catalog v2' }, { port: 9103, name: 'checkout', version: 'checkout' }
 ];
@@ -65,7 +66,7 @@ for (const service of services) {
   upstream.all('/*', async (request, reply) => ({ service: service.version, method: request.method, path: request.url, message: service.name === 'checkout' ? 'Checkout accepted' : `Response from ${service.version}`, requestId: request.headers['x-request-id'] ?? null }));
   void upstream.listen({ port: service.port, host: '127.0.0.1' });
 }
-await app.register(cors, { origin: (origin, callback) => callback(null, !origin || origin === process.env.CORS_ORIGIN || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) });
+await app.register(cors, { origin: (origin, callback) => callback(null, allowedOrigin(origin)) });
 app.get('/healthz', async () => ({ status: 'ok', service: 'l7-lab' }));
 app.post('/api/sessions', async (_request, reply) => {
   const health = Object.fromEntries(Object.keys(targets).map(id => [id, { status: 'healthy', failures: 0, successes: 0, lastChange: now() }])) as Record<TargetId, HealthState>;
@@ -140,7 +141,8 @@ app.get<{ Params: { id: string } }>('/api/sessions/:id/report', async (request, 
 });
 app.get<{ Params: { id: string } }>('/api/sessions/:id/events', async (request, reply) => {
   if (!getSession(request.params.id)) return reply.code(404).send({ error: 'Session expired.' });
-  reply.raw.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
+  const origin = request.headers.origin;
+  reply.raw.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive', ...(allowedOrigin(origin) && origin ? { 'access-control-allow-origin': origin, vary: 'Origin' } : {}) });
   reply.raw.write(`event: ready\ndata: ${JSON.stringify({ sessionId: request.params.id })}\n\n`);
   const clients = eventClients.get(request.params.id) ?? new Set<ServerResponse>(); clients.add(reply.raw); eventClients.set(request.params.id, clients);
   const timer = setInterval(() => reply.raw.write(': keep-alive\n\n'), 15_000);
